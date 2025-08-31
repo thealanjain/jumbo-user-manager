@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 
 import Link from "next/link";
+import UserFormDialog from "./UserFormDialog";
+import DeleteConfirmDialog from "./DeleteConfirmDialog";
 import { useUsers } from "@/app/hooks/useUsers";
+import { User } from "@/app/types/user";
 import { CompanySelect } from "../core/Select";
 import { InitialsAvatar } from "../core/Avatar";
 import { getInitials } from "@/app/utils/getInitials";
@@ -12,13 +15,19 @@ import Pagination from "../part/Pagination";
 const PAGE_SIZE = 5;
 
 export default function UserTable() {
-  const { usersQuery } = useUsers();
+  const { usersQuery, addUser, editUser, deleteUser } = useUsers();
   const users = usersQuery.data || [];
 
   const [search, setSearch] = useState("");
   const [sortAsc, setSortAsc] = useState(true);
   const [companyFilter, setCompanyFilter] = useState("");
   const [page, setPage] = useState(1);
+
+  const [openForm, setOpenForm] = useState(false);
+  const [mode, setMode] = useState<"add" | "edit">("add");
+  const [selected, setSelected] = useState<User | null>(null);
+
+  const [openDelete, setOpenDelete] = useState(false);
 
   const companies = useMemo(() => {
     const set = new Set(users.map((u) => u.company?.name).filter(Boolean));
@@ -44,6 +53,10 @@ export default function UserTable() {
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  function handleAdd() { setMode("add"); setSelected(null); setOpenForm(true); }
+  function handleEdit(u: User) { setMode("edit"); setSelected(u); setOpenForm(true); }
+  function handleDelete(u: User) { setSelected(u); setOpenDelete(true); }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -68,7 +81,7 @@ export default function UserTable() {
           </button>
           <CompanySelect items={companies} value={companyFilter} onValueChange={(v) => { setCompanyFilter(v); setPage(1); }} />
         </div>
-        <button onClick={() => {}} className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+        <button onClick={handleAdd} className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
           + Add User
         </button>
       </div>
@@ -100,8 +113,8 @@ export default function UserTable() {
                 <td className="px-3 py-2">{u.company?.name}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-2">
-                    <button className="rounded-lg border px-2 py-1 dark:border-gray-700" onClick={() => {}}>Edit</button>
-                    <button className="rounded-lg border px-2 py-1 text-red-600 hover:bg-red-50 dark:border-gray-700" onClick={() => {}}>Delete</button>
+                    <button className="rounded-lg border px-2 py-1 dark:border-gray-700" onClick={() => handleEdit(u)}>Edit</button>
+                    <button className="rounded-lg border px-2 py-1 text-red-600 hover:bg-red-50 dark:border-gray-700" onClick={() => handleDelete(u)}>Delete</button>
                   </div>
                 </td>
               </tr>
@@ -115,6 +128,36 @@ export default function UserTable() {
         pageCount={pageCount}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(pageCount || 1, p + 1))}
+      />
+
+      <UserFormDialog
+        open={openForm}
+        onOpenChange={setOpenForm}
+        mode={mode}
+        initial={selected || undefined}
+        onSubmit={(v) => {
+          if (mode === "add") {
+            addUser.mutate({
+              name: v.name, email: v.email, phone: v.phone,
+              address: { street: "", city: "", zipcode: "" },
+              company: { name: v.company },
+              id: 0, // ignored in optimistic
+            } as User);
+          } else if (selected) {
+            const updated: User = {
+              ...selected, name: v.name, email: v.email, phone: v.phone, company: { name: v.company }
+            };
+            editUser.mutate(updated);
+          }
+          setOpenForm(false);
+        }}
+      />
+
+      <DeleteConfirmDialog
+        open={openDelete}
+        onOpenChange={setOpenDelete}
+        name={selected?.name || ""}
+        onConfirm={() => { if (selected) deleteUser.mutate(selected.id); setOpenDelete(false); }}
       />
     </div>
   );
